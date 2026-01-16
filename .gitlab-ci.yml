@@ -1,35 +1,35 @@
 stages:
   - build
-  - test
-  - push_to_dockerhub
+  - push
   - deploy
 
-build_job:
+variables:
+  IMAGE_NAME: "$DOCKER_USERNAME/node-todo-cicd"
+
+build:
   stage: build
   script:
-    - docker build -t node-app:latest .
-  tags:
-    - dev
+    - docker build -t $IMAGE_NAME:latest .
+  only:
+    - main
 
-test_job:
-  stage: test
+push:
+  stage: push
   script:
-    - echo "testing ..."
-  tags:
-    - dev
+    - echo "DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
+    - docker push $IMAGE_NAME:latest
+  only:
+    - main
 
-push_job:
-  stage: push_to_dockerhub
-  script:
-    - docker login -u $DOCKERHUB_USER -p $DOCKERHUB_PASS
-    - docker image tag node-app:latest $DOCKERHUB_USER/node-app:latest
-    - docker push $DOCKERHUB_USER/node-app:latest
-  tags:
-    - dev
-
-deploy_job:
+deploy:
   stage: deploy
   script:
-    - docker compose up -d
-  tags:
-    - dev
+    - chmod 600 $EC2_KEY
+    - ssh -o StrictHostKeyChecking=no -i $EC2_KEY ubuntu@$EC2_HOST "
+        docker pull $IMAGE_NAME:latest &&
+        docker stop node-app || true &&
+        docker rm node-app || true &&
+        docker run -d -p 8000:8000 --name node-app $IMAGE_NAME:latest
+      "
+  only:
+    - main
